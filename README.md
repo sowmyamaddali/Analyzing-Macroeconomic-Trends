@@ -1,4 +1,8 @@
 # Analyzing-Macroeconomic-Trends
 
+## Datasets used are - CPIAUCSL, PPIACO, WPSFD4111, and WPSFD49207
+The datasets used in this analysis are retrieved from the Federal Reserve Economic Data (FRED) database, and are focusing on four key economic indicators. FRED is a comprehensive database maintained by the Federal Reserve Bank of St.Louis, providing a wide array of economic data for researchers, policymakers, and the general public. The datasets chosen for this study are critical indicators of price movements in the United States and provide insights into various aspects of the economy. 
+Link to FRED - https://fred.stlouisfed.org/
+
 ## Introduction
 In this study, I endeavor to offer a comprehensive understanding of four key economic datasets integral to evaluating the dynamics of contemporary economies. Firstly, the Consumer Price Index (CPIAUCSL) is a vital metric reflecting the average change in prices paid by urban consumers for a defined basket of goods and services. Similarly, the Producer Price Index (PPIACO) serves as a critical gauge of the average change over time in the selling prices received by domestic producers for their output. Furthermore, the Producer Price Index by Commodity: Final Demand: Finished Consumer Foods (WPSFD4111) and the Producer Price Index by Commodity: Final Demand: Finished Goods (WPSFD49207) are instrumental in assessing the changes in prices received by producers for food and finished goods, respectively, providing insights into the fluctuations within specific sectors of the economy. Unveiling the intricate intricacies of these datasets is paramount to forming a robust foundation for an in-depth economic analysis.
