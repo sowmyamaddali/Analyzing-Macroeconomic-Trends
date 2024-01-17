@@ -1,0 +1,25 @@
+---
+title: "Loss Function"
+author: "Sowmya Maddali"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r, echo = T, eval = T}
+loss_functions <- function(predict, actual) {
+  predict <- as.vector(predict)
+  actual <- as.vector(actual)
+  mse <- mean((predict-actual)^2)
+  mae <- mean(abs(predict-actual))
+  rmse <- sqrt(mean((predict-actual)^2))
+  rmae <- sqrt(mean(abs(predict-actual)))
+  mape <- mean(abs((predict-actual)/actual)*100)
+  msle <- mean((log(actual) - log(predict) )^2)
+  return(list(mse = mse,
+              mae = mae,
+              rmse = rmse,
+              rmae = rmae,
+              mape = mape,
+              msle = msle))
+}
+```
