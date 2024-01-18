@@ -1,0 +1,292 @@
+---
+title: "Midterm - (Consumer Price Index for All Urban Consumers: All Items in U.S. City Average) "
+author: "Sowmya Maddali"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+
+# Packages needed
+
+```{r}
+pacman::p_load(fredr, ggplot2, tidyverse, tsbox, tseries,
+               tsibble, forecast, tseries, lubridate,
+               expsmooth, WDI, knitr, broom, ggpubr,
+               stargazer, urca, patchwork, ForecastComb)
+```
+
+
+
+# FREDR API KEY and loading the data
+
+```{r}
+fredr_set_key("5a3f5a4d628dad0eeebb7dc5711f691c")
+cpi <- fredr(series_id = "CPIAUCSL",
+                    observation_start = as.Date("1999-01-01"),
+                    observation_end = as.Date("2019-12-31")) %>%
+  select(date, series_id, value) %>%
+  mutate(index_first_diff = value - lag(value),
+         index_second_diff = difference(value, differences = 2)) %>%
+  tsibble(index = date) %>%
+  mutate(outlier_dummy = ifelse(date == as.Date("2008-10-01"), 1, 0))
+```
+
+
+
+# Plot
+
+```{r}
+plot(cpi$date, cpi$value, xlab = "Time", ylab = "CPI values",
+    main = "Consumer Price Index for All Urban Consumers")
+```
+
+
+
+# Summary
+
+```{r}
+summary(cpi)
+```
+
+
+
+```{r}
+intord(cpi$value, year = 1999, freq = 12, period = 1)
+
+# it has a trend and needs to be detrended
+```
+
+
+Level series does not look stationary and the ACF is decreasing is very slow hence taking the first difference. 
+1. The standard deviation reduces by more than half from level series to first difference
+2. Visually it does look like there is constant mean and constant variance for the first difference
+3. ACF decays at a faster rate when compared with level series.
+4. ADF test provides further evidence that the first difference is stationary at all 3 significant levels.
+
+
+
+# ACF and PACF
+
+```{r}
+ggAcf(cpi$index_first_diff) + ggtitle("ACF plot for CPI") | ggPacf(cpi$index_first_diff) + ggtitle("PACF plot for CPI")
+```
+
+PACF decays faster than the PACF so it is an AR model
+
+
+# Train and test split
+
+```{r}
+train_cpi <- cpi$value[1:246]
+test_cpi <- cpi$value[247:252]
+
+ts_train_cpi <- ts(train_cpi, start = c(1999, 1), freq = 12)
+ts_test_cpi <- ts(test_cpi, start = c(2019, 7), freq = 12)
+
+print(ts_train_cpi)
+print(ts_test_cpi)
+```
+
+
+
+
+
+# Modeling
+
+```{r}
+# Model - 1
+# p = 5, d = 1, q = 0
+
+cpi_model_1 <- Arima(ts_train_cpi,
+                      order = c(5, 1, 0))
+
+print(cpi_model_1)
+```
+
+
+
+```{r}
+# Model - 2
+# p = 2, d = 1, q = 0
+cpi_model_2 <- Arima(ts_train_cpi,
+                      order = c(2, 1, 0))
+
+print(cpi_model_2)
+```
+
+
+
+```{r}
+# Model - 3
+# p = 3, d = 1, q = 2
+
+cpi_model_3 <- Arima(ts_train_cpi,
+                      order = c(3, 1, 2))
+
+print(cpi_model_3)
+```
+
+Model 1 is the best model according to AIC values.
+
+# Brute force model
+```{r}
+cpi_brute_force_model <- auto.arima(ts(ts_train_cpi),
+                                ic = 'aic',
+                                trace = T)
+```
+
+
+
+# Serial Correlation
+
+```{r}
+ggAcf(cpi_model_1$residuals) + ggtitle("Serial Correlation for Model 1")
+ggAcf(cpi_model_2$residuals) + ggtitle("Serial Correlation for Model 2")
+ggAcf(cpi_model_3$residuals) + ggtitle("Serial Correlation for Model 3")
+```
+
+
+
+# Ljung-Box Q Statistic in R
+```{r}
+Box.test(cpi_model_1$residuals, 
+         type = "Ljung-Box")
+
+Box.test(cpi_model_2$residuals, 
+         type = "Ljung-Box")
+
+Box.test(cpi_model_3$residuals, 
+         type = "Ljung-Box")
+```
+
+
+
+# Forecast
+
+```{r}
+# Model - 1
+cpi_forecast_model_1 <- forecast(cpi_model_1, 
+                                 h = 6)
+print(cpi_forecast_model_1)
+
+
+# Model - 2
+cpi_forecast_model_2 <- forecast(cpi_model_2, 
+                                 h = 6)
+print(cpi_forecast_model_2)
+
+
+# Model - 3
+cpi_forecast_model_3 <- forecast(cpi_model_3,
+                                 h = 6)
+print(cpi_forecast_model_3)
+
+```
+
+
+
+# Autoplot
+
+```{r}
+autoplot(cpi_forecast_model_1, xlim = c(2012, 2020), ylim = c(220,262))
+autoplot(cpi_forecast_model_2, xlim = c(2012, 2020), ylim = c(220,262))
+autoplot(cpi_forecast_model_3, xlim = c(2012, 2020), ylim = c(220,262))
+```
+
+
+
+# Loss Functions
+
+```{r, warning=FALSE}
+print("Model 1")
+# Model - 1
+cpi_loss_model_1 <- loss_functions(cpi_forecast_model_1$mean, ts_test_cpi)
+print(cpi_loss_model_1[3:4])
+
+print("Model 2")
+# Model - 2
+cpi_loss_model_2 <- loss_functions(cpi_forecast_model_2$mean, ts_test_cpi)
+print(cpi_loss_model_2[3:4])
+
+print("Model 3")
+# Model - 3
+cpi_loss_model_3 <- loss_functions(cpi_forecast_model_3$mean, ts_test_cpi)
+print(cpi_loss_model_3[3:4])
+```
+Model 1 is the best predicting model
+
+
+# OLS combination
+
+```{r}
+cpi_combination <- lm(ts_test_cpi ~ cpi_forecast_model_1$mean[1:6] + cpi_forecast_model_2$mean[1:6]
+                      + cpi_forecast_model_3$mean[1:6])
+summary(cpi_combination)
+
+# root mean square error
+print(sqrt(mean(test_cpi - cpi_combination$fitted.values)^2))
+```
+
+
+
+# Granger-Bates
+
+```{r}
+cpi_combination_object <- foreccomb(test_cpi,
+                                cbind(cpi_forecast_model_1$mean[1:6],
+                                      cpi_forecast_model_2$mean[1:6],
+                                      cpi_forecast_model_3$mean[1:6]))
+print(cpi_combination_object)
+
+cpi_granger_bates <- comb_BG(cpi_combination_object)
+print(cpi_granger_bates)
+```
+
+
+
+```{r}
+# Model forecasts (from part iv)
+model1_forecast <- c(255.2357, 255.4549, 255.5754, 255.5979, 255.6152, 255.6607) 
+model2_forecast <- c(255.0683, 255.0239, 255.0048, 254.9971, 254.9942, 254.9931)
+model3_forecast <- c(255.1577, 255.1898, 255.1306, 255.0951, 255.1437, 255.1482)
+
+# Actual test observations
+test_obs <- c(255.685, 256.059, 256.511, 257.244, 257.803, 258.616)  
+
+# Assume model 1 is preferred 
+preferred_model <- model1_forecast
+
+# Create forecast combination object
+fc_object <- foreccomb(test_obs, cbind(model1_forecast, model2_forecast, model3_forecast))
+
+# Get Granger-Bates combined forecast
+gb_forecast <- comb_BG(fc_object)
+
+# Plot forecasts
+plot(test_obs, type="o", col="black", ylim=c(254.76,259.89), 
+     xlab="Time", ylab="Value")
+lines(preferred_model, col="blue", lwd=2) 
+lines(gb_forecast$Fitted, col="red", lwd=2)
+legend("topleft", legend=c("Test Observations", "Forecast Model 1", "Granger-Bates Combination Model"),
+       col=c("black", "blue", "red"), lwd=c(1,2,2), cex=0.8)
+title("Forecast Accuracy Comparison")
+```
+
+
+```{r}
+# Compute forecast errors
+preferred_error <- sqrt(mean((test_obs - preferred_model)^2)) 
+gb_error <- sqrt(mean((test_obs - gb_forecast$Fitted)^2))
+
+# Print forecast errors
+print(paste("Preferred model RMSE:", round(preferred_error, 2)))
+print(paste("Granger-Bates RMSE:", round(gb_error, 2)))
+```
+
+
+
+
+
+
+
