@@ -1,0 +1,295 @@
+---
+title: "Midterm - PPI (Producer Price Index by Commodity: All Commodities)"
+author: "Sowmya Maddali"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Packages needed
+
+```{r}
+pacman::p_load(fredr, ggplot2, tidyverse, tsbox, tseries,
+               tsibble, forecast, tseries, lubridate,
+               expsmooth, WDI, knitr, broom, ggpubr,
+               stargazer, urca, patchwork, gridExtra, ForecastComb)
+```
+
+
+# Getting the data
+
+```{r}
+fredr_set_key("5a3f5a4d628dad0eeebb7dc5711f691c")
+ppi <- fredr(series_id = "PPIACO",
+                    observation_start = as.Date("1999-01-01"),
+                    observation_end = as.Date("2019-12-31")) %>%
+  select(date, series_id, value) %>%
+  mutate(index_first_diff = value - lag(value),
+         index_second_diff = difference(value, differences = 2)) %>%
+  tsibble(index = date)
+```
+
+
+# Plotting
+
+```{r}
+plot(ppi$date, ppi$value, xlab = "Time", ylab = "PPI value",
+    main = "Produce Price Index by Commodity: All Commodities")
+# ppi_no_na <- ppi %>%
+#  filter(complete.cases(.))
+
+head(ppi)
+```
+
+
+
+# Summary
+
+```{r}
+summary(ppi)
+```
+
+
+
+# Intord results
+
+```{r}
+intord(ppi$value, year = 1999, freq = 12, period = 1)
+
+# from the intord results it is not stationary at level series, but is stationary at the first difference and it doesn't look like it has a trend either
+```
+
+
+# ACF and PACF
+
+```{r}
+pacman::p_load(patchwork)
+ggAcf(ppi$index_first_diff) + ggtitle("ACF plot for PPI") | ggPacf(ppi$index_first_diff) + ggtitle("PACF plot for PPI")
+```
+
+
+# Train-test split
+
+```{r}
+train_ppi <- ppi$value[1:246]
+test_ppi <- ppi$value[247:252]
+
+ts_train_ppi <- ts(train_ppi, start = c(1999, 1), freq = 12)
+ts_test_ppi <- ts(test_ppi, start = c(2019, 7), freq = 12)
+
+ts_test_ppi
+```
+
+
+# Modeling
+
+## model - 1
+```{r}
+# model - 1
+# p = 1, d = 1, q = 0
+ppi_model_1 <- Arima(ts_train_ppi,
+                     order = c(1, 1, 0),
+                     xreg = seasonaldummy(ts_train_ppi))
+
+#broom::tidy(ppi_model_1)
+print(ppi_model_1)
+```
+
+
+
+## model - 2
+
+```{r}
+# model - 2
+# p = 2, d = 1, q = 2
+ppi_model_2 <- Arima(ts_train_ppi,
+                     order = c(2, 1, 2),
+                     xreg = seasonaldummy(ts_train_ppi))
+
+print(ppi_model_2)
+```
+
+
+
+## model - 3
+
+```{r}
+# model - 3
+# p = 2, d = 1, q = 1
+ppi_model_3 <- Arima(ts_train_ppi,
+                     order = c(2, 1, 1),
+                     xreg = seasonaldummy(ts_train_ppi))
+
+#broom::tidy(ppi_model_4)
+print(ppi_model_3)
+```
+
+Model 1 is the best model according AIC values.
+
+
+
+## Hack
+```{r}
+ppi_brute_force_model <- auto.arima(ts(ts_train_ppi),
+                                ic = 'aic',
+                                trace = T)
+```
+
+
+
+# Serial Correlation
+
+```{r}
+ggAcf(ppi_model_1$residuals) + ggtitle("Serial Correlation for Model 1")
+ggAcf(ppi_model_2$residuals) + ggtitle("Serial Correlation for Model 2")
+ggAcf(ppi_model_3$residuals) + ggtitle("Serial Correlation for Model 3")
+
+```
+
+
+# Ljung-Box Q Statistic in R
+```{r}
+Box.test(ppi_model_1$residuals, 
+         type = "Ljung-Box")
+
+Box.test(ppi_model_3$residuals, 
+         type = "Ljung-Box")
+
+Box.test(ppi_model_3$residuals, 
+         type = "Ljung-Box")
+```
+
+
+
+
+# Forecast
+
+```{r}
+# Model - 1
+ppi_forecast_model_1 <- forecast(ppi_model_1, 
+                                 xreg = seasonaldummy(ts_test_ppi),
+                                 h = 6)
+print(ppi_forecast_model_1)
+
+
+# Model - 2
+ppi_forecast_model_2 <- forecast(ppi_model_2, 
+                                 xreg = seasonaldummy(ts_test_ppi),
+                                 h = 6)
+print(ppi_forecast_model_2)
+
+
+# Model - 3
+ppi_forecast_model_3 <- forecast(ppi_model_3, 
+                                 xreg = seasonaldummy(ts_test_ppi),
+                                 h = 6)
+print(ppi_forecast_model_3)
+```
+
+
+
+# Autoplot
+
+```{r}
+autoplot(ppi_forecast_model_1, xlim = c(2012, 2020), ylim = c(180, 210))
+autoplot(ppi_forecast_model_2, xlim = c(2012, 2020), ylim = c(180, 210))
+autoplot(ppi_forecast_model_3, xlim = c(2012, 2020), ylim = c(180, 210))
+```
+
+
+
+# Loss functions
+
+```{r, warning=FALSE}
+print("Model 1")
+# Model - 1
+ppi_loss_model_1 <- loss_functions(ppi_forecast_model_1$mean, ts_test_ppi)
+print(ppi_loss_model_1[3:4])
+
+print("Model 2")
+# Model - 2
+ppi_loss_model_2 <- loss_functions(ppi_forecast_model_2$mean, ts_test_ppi)
+print(ppi_loss_model_2[3:4])
+
+print("Model 3")
+# Model - 3
+ppi_loss_model_3 <- loss_functions(ppi_forecast_model_3$mean, ts_test_ppi)
+print(ppi_loss_model_3[3:4])
+```
+Model 1 is the best predicting model
+
+
+# OLS combination
+
+```{r}
+ppi_combination <- lm(test_ppi ~ ppi_forecast_model_1$mean[1:6] + ppi_forecast_model_2$mean[1:6]
+                      + ppi_forecast_model_2$mean[1:6])
+summary(ppi_combination)
+
+# root mean square error
+print(sqrt(mean(test_ppi - ppi_combination$fitted.values)^2))
+```
+
+
+
+# Granger-Bates
+
+```{r}
+ppi_combination_object <- foreccomb(test_ppi,
+                                cbind(ppi_forecast_model_1$mean[1:6],
+                                      ppi_forecast_model_2$mean[1:6],
+                                      ppi_forecast_model_3$mean[1:6]))
+print(ppi_combination_object)
+
+ppi_granger_bates <- comb_BG(ppi_combination_object)
+print(ppi_granger_bates)
+```
+
+
+
+# Forecast combination plot
+
+
+```{r}
+# Model forecasts (from part iv)
+ppi_model1_forecast <- c(199.5545, 198.6398, 198.3929, 197.3816, 196.5386, 195.6519) 
+ppi_model2_forecast <- c(199.4489, 198.3775, 197.9713, 196.8573, 195.9355, 195.0050)
+ppi_model3_forecast <- c(199.4339, 198.3812, 198.0462, 196.9730, 196.0965, 195.1880)
+
+# Actual test observations
+ppi_test_obs <- c(200.7, 199.2, 198.4, 198.6, 199.0, 199.0)  
+
+# Assume model 1 is preferred 
+ppi_preferred_model <- ppi_model1_forecast
+
+# Create forecast combination object
+fc_object <- foreccomb(ppi_test_obs, cbind(ppi_model1_forecast, ppi_model2_forecast, ppi_model3_forecast))
+
+# Get Granger-Bates combined forecast
+gb_forecast <- comb_BG(fc_object)
+
+# Plot forecasts
+plot(ppi_test_obs, type="o", col="black", ylim=c(194,200.75), 
+     xlab="Time", ylab="Value")
+lines(ppi_preferred_model, col="blue", lwd=2) 
+lines(gb_forecast$Fitted, col="red", lwd=2)
+legend("bottomleft", legend=c("Test Observations", "Preferred Model 1", "Granger-Bates Combination Model"),
+       col=c("black", "blue", "red"), lwd=c(1,2,2), cex=0.8)
+title("Forecast Accuracy Comparison")
+```
+
+
+
+```{r}
+# Compute forecast errors
+ppi_preferred_error <- sqrt(mean((ppi_test_obs - ppi_preferred_model)^2)) 
+gb_error <- sqrt(mean((ppi_test_obs - gb_forecast$Fitted)^2))
+
+# Print forecast errors
+print(paste("Preferred model RMSE:", round(ppi_preferred_error, 2)))
+print(paste("Granger-Bates RMSE:", round(gb_error, 2)))
+```
+
+
+
+
+

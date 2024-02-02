@@ -1,0 +1,292 @@
+---
+title: "Midterm - Producer Price Index by Commodity: Final Demand: Finished Goods (WPSFD49207)"
+author: "Sowmya Maddali"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+pacman::p_load(fredr, ggplot2, tidyverse, tsbox, tseries,
+               tsibble, forecast, tseries, lubridate,
+               expsmooth, WDI, knitr, broom, ggpubr,
+               stargazer, urca, patchwork)
+```
+
+
+
+```{r}
+fredr_set_key("5a3f5a4d628dad0eeebb7dc5711f691c")
+ppi_fg <- fredr(series_id = "WPSFD49207",
+                    observation_start = as.Date("1999-01-01"),
+                    observation_end = as.Date("2019-12-01")) %>%
+  select(date, series_id, value) %>%
+  mutate(index_first_diff = value - lag(value),
+         index_second_diff = difference(value, differences = 2)) %>%
+  tsibble(index = date)
+```
+
+
+
+
+# Plot
+
+```{r}
+plot(ppi_fg$date, ppi_fg$value, xlab = "Time", ylab = "PPI Finished Goods values",
+    main = "PPI: Final Demand: Finished Goods")
+```
+
+
+
+# Summary
+
+```{r}
+summary(ppi_fg)
+```
+
+
+
+```{r}
+intord(ppi_fg$value, year = 1999, freq = 12, period = 1)
+
+# it is stationary since it has almost constant mean and constant variance
+```
+
+Level series is not stationary from all aspects, but first difference is stationary
+
+
+# ACF and PACF
+
+```{r}
+ggAcf(ppi_fg$index_first_diff) + ggtitle("ACF plot for PPI Finished Goods") | ggPacf(ppi_fg$index_first_diff) + ggtitle("PACF plot for PPI Finished Goods")
+```
+
+
+PACF decays faster than ACF so its an AR model
+
+
+# Train and test split
+
+```{r}
+train_ppi_fg <- ppi_fg$value[1:246]
+test_ppi_fg <- ppi_fg$value[247:252]
+
+ts_train_ppifg <- ts(train_ppi_fg, start = c(1999, 1), freq = 12)
+ts_test_ppifg <- ts(test_ppi_fg, start = c(2019, 7), freq = 12)
+
+glimpse(ts_train_ppifg)
+tail(ts_test_ppifg)
+```
+
+
+
+# Modeling
+
+```{r}
+# Model - 1
+# p = 7, d = 1, q = 0
+
+ppifg_model_1 <- Arima(ts_train_ppifg,
+                      order = c(7, 1, 0))
+
+print(ppifg_model_1)
+
+```
+
+
+
+```{r}
+# Model - 2
+# p = 5, d = 1, q = 0
+
+ppifg_model_2 <- Arima(ts_train_ppifg,
+                      order = c(3, 1, 0))
+
+print(ppifg_model_2)
+
+```
+
+
+# The best model
+
+```{r}
+# Model - 3
+# p = 5, d = 1, q = 0
+
+ppifg_model_3 <- Arima(ts_train_ppifg,
+                      order = c(1, 1, 0))
+
+print(ppifg_model_3)
+
+```
+
+Model 3 is the best model according to AIC values.
+
+# Brute force model
+
+```{r}
+ppifg_brute_force_model <- auto.arima(ts(ts_train_ppifg),
+                                ic = 'aic',
+                                trace = T)
+```
+
+
+
+# Serial Correlation
+
+```{r}
+ggAcf(ppifg_model_1$residuals) + ggtitle("Serial Correlation for Model 1")
+ggAcf(ppifg_model_2$residuals) + ggtitle("Serial Correlation for Model 2")
+ggAcf(ppifg_model_3$residuals) + ggtitle("Serial Correlation for Model 3")
+```
+
+
+# Ljung-Box Q Statistic in R
+
+```{r}
+Box.test(ppifg_model_1$residuals, 
+         type = "Ljung-Box")
+
+Box.test(ppifg_model_2$residuals, 
+         type = "Ljung-Box")
+
+Box.test(ppifg_model_3$residuals, 
+         type = "Ljung-Box")
+```
+
+All the p-values are above 0.05, hence there is no serial correlation being exhibited here.
+
+
+
+# Forecast
+
+```{r}
+# Model - 1
+ppifg_forecast_model_1 <- forecast(ppifg_model_1, 
+                                 h = 6)
+print(ppifg_forecast_model_1)
+
+
+# Model - 2
+ppifg_forecast_model_2 <- forecast(ppifg_model_2, 
+                                 h = 6)
+print(ppifg_forecast_model_2)
+
+
+# Model - 3
+ppifg_forecast_model_3 <- forecast(ppifg_model_3,
+                                 h = 6)
+print(ppifg_forecast_model_3)
+
+```
+
+
+
+# Autoplot
+
+```{r}
+autoplot(ppifg_forecast_model_1, xlim = c(2015, 2020), ylim = c(185,215))
+autoplot(ppifg_forecast_model_2, xlim = c(2015, 2020), ylim = c(185,215))
+autoplot(ppifg_forecast_model_3, xlim = c(2015, 2020), ylim = c(185,215))
+```
+
+
+
+# Loss Functions
+
+```{r, warning=FALSE}
+print("Model 1")
+# Model - 1
+ppifg_loss_model_1 <- loss_functions(ppifg_forecast_model_1$mean, ts_test_ppifg)
+print(ppifg_loss_model_1[3:4])
+
+print("Model 2")
+# Model - 2
+ppifg_loss_model_2 <- loss_functions(ppifg_forecast_model_2$mean, ts_test_ppifg)
+print(ppifg_loss_model_2[3:4])
+
+print("Model 3")
+# Model - 3
+ppifg_loss_model_3 <- loss_functions(ppifg_forecast_model_3$mean, ts_test_ppifg)
+print(ppifg_loss_model_3[3:4])
+```
+
+Model 3 is the best model based on both AIC values and Loss Functions
+
+
+
+# Granger-Bates
+
+```{r}
+ppifg_combination_object <- foreccomb(test_ppi_fg,
+                                cbind(ppifg_forecast_model_1$mean[1:6],
+                                      ppifg_forecast_model_2$mean[1:6],
+                                      ppifg_forecast_model_3$mean[1:6]))
+print(ppifg_combination_object)
+
+ppifg_granger_bates <- comb_BG(ppifg_combination_object)
+print(ppifg_granger_bates)
+```
+
+
+
+```{r}
+# Model forecasts (from part iv)
+model1_forecast <- c(204.9302, 204.5880, 204.3816, 204.3313, 204.5802, 204.6157) 
+model2_forecast <- c(204.8819, 204.6962, 204.6083, 204.5660, 204.5453, 204.5353)
+model3_forecast <- c(204.8941, 204.8090, 204.7853, 204.7788, 204.7769, 204.7764)
+
+# Actual test observations
+test_obs <- c(205.8, 205.3, 205.3, 206.6, 207.3, 208.5)  
+
+# Assume model 1 is preferred 
+preferred_model <- model3_forecast
+
+# Create forecast combination object
+fc_object <- foreccomb(test_obs, cbind(model1_forecast, model2_forecast, model3_forecast))
+
+# Get Granger-Bates combined forecast
+gb_forecast <- comb_BG(fc_object)
+
+# Plot forecasts
+plot(test_obs, type="o", col="black", ylim=c(204,209),
+     xlab="Time", ylab="Value")
+lines(preferred_model, col="blue", lwd=2) 
+lines(gb_forecast$Fitted, col="red", lwd=2)
+legend("topleft", legend=c("Test Observations", "Forecast Model 3", "Granger-Bates Combination Model"),
+       col=c("black", "blue", "red"), lwd=c(1,2,2), cex=0.8)
+title("Forecast Accuracy Comparison")
+```
+
+
+
+```{r}
+# Compute forecast errors
+preferred_error <- sqrt(mean((test_obs - preferred_model)^2)) 
+gb_error <- sqrt(mean((test_obs - gb_forecast$Fitted)^2))
+
+# Print forecast errors
+print(paste("Preferred model RMSE:", round(preferred_error, 2)))
+print(paste("Granger-Bates RMSE:", round(gb_error, 2)))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
